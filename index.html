@@ -309,6 +309,43 @@ body::after{
 .field input[type="range"]{padding:0;background:transparent;border:none;accent-color:var(--accent)}
 .field input[type="checkbox"]{width:auto;accent-color:var(--accent)}
 
+/* ============ groups ============ */
+.rail-actions-2{padding-top:0}
+.rail-scroll{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;padding-bottom:var(--space-4)}
+.rail-scroll .char-list{flex:none;overflow:visible;padding-bottom:0}
+.rail-scroll::-webkit-scrollbar{width:8px}
+.rail-scroll::-webkit-scrollbar-thumb{
+  background:rgba(243,239,232,.1);border-radius:99px;border:2px solid transparent;background-clip:padding-box;
+}
+
+.monogram.mono-xs{width:22px;height:22px;font-size:10px}
+.stack{display:inline-flex;flex:none}
+.stack .monogram{box-shadow:0 0 0 2px var(--paper-2)}
+.stack .monogram:not(:first-child){margin-left:-9px}
+.char-item.is-active .stack .monogram{color:var(--accent);border-color:rgba(213,154,99,.3);background:rgba(213,154,99,.08)}
+
+.who-avatars{display:inline-flex;flex:none}
+.who-avatars .monogram:not(:first-child){margin-left:-12px}
+.who-avatars .monogram{box-shadow:0 0 0 2px rgba(19,17,16,.9)}
+
+.chat-empty-stack{display:flex;margin-bottom:var(--space-4)}
+.chat-empty-stack .monogram:not(:first-child){margin-left:-14px}
+
+.pick-list{
+  display:flex;flex-direction:column;gap:6px;max-height:44vh;overflow-y:auto;
+  border:1px solid var(--line-2);border-radius:var(--radius-lg);padding:var(--space-2);background:var(--paper);
+}
+.field .pick-item{
+  display:flex;flex-direction:row;align-items:center;gap:var(--space-3);
+  padding:var(--space-2) var(--space-3);margin:0;
+  border-radius:var(--radius);cursor:pointer;transition:background var(--dur-1) var(--ease-out);
+}
+.field .pick-item:hover{background:var(--paper-3)}
+.field .pick-item input{width:auto;padding:0;margin:0;border:none;background:transparent;accent-color:var(--accent);flex:none}
+.field .pick-item .pick-name{font-size:var(--text-base);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.field .pick-item:has(input:checked){background:var(--paper-3)}
+.field .pick-item:has(input:checked) .pick-name{color:var(--accent);font-weight:600}
+
 .toast{
   position:fixed;left:50%;bottom:var(--space-6);transform:translateX(-50%) translateY(12px);
   background:var(--paper-3);border:1px solid var(--line-2);color:var(--ink);
@@ -367,8 +404,19 @@ body::after{
       </button>
     </div>
 
-    <div class="rail-label">角色卡 <span id="charCount">0</span></div>
-    <div class="char-list" id="charList"></div>
+    <div class="rail-actions rail-actions-2">
+      <button class="btn btn-block" id="newGroupBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        新建群聊
+      </button>
+    </div>
+
+    <div class="rail-scroll">
+      <div class="rail-label">群聊 <span id="groupCount">0</span></div>
+      <div class="char-list" id="groupList"></div>
+      <div class="rail-label">角色卡 <span id="charCount">0</span></div>
+      <div class="char-list" id="charList"></div>
+    </div>
     <div class="rail-foot">数据存于本地浏览器<br>API Key 不会上传到任何服务器</div>
   </aside>
 
@@ -379,7 +427,7 @@ body::after{
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
       </button>
       <div class="who" id="who">
-        <span class="monogram" id="whoAvatar">?</span>
+        <span class="who-avatars" id="whoAvatar"><span class="monogram">?</span></span>
         <div class="who-name" id="whoName">未选择角色</div>
       </div>
       <div class="spacer"></div>
@@ -453,6 +501,29 @@ body::after{
   </div>
 </div>
 
+<!-- group modal -->
+<div class="overlay" id="groupOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>新建群聊</h2>
+      <button class="x" data-close="groupOverlay" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>选择同场对话的角色（至少 2 个）</label>
+        <div class="pick-list" id="groupPick"></div>
+      </div>
+      <div class="err" id="groupErr">请至少选择 2 个角色</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close="groupOverlay">取消</button>
+      <button class="btn btn-primary" id="groupCreate">创建群聊</button>
+    </div>
+  </div>
+</div>
+
 <!-- settings modal -->
 <div class="overlay" id="setOverlay">
   <div class="modal">
@@ -507,10 +578,12 @@ body::after{
   var LS_SETTINGS = "yanchat.settings.v1";
   var LS_ACTIVE = "yanchat.active.v1";
   var LS_CHAT = "yanchat.chat.v1";
+  var LS_GROUPS = "yanchat.groups.v1";
 
   var state = {
     characters: [],
     settings: { base:"https://api.openai.com/v1", key:"", model:"gpt-4o-mini", temp:0.8, stream:true, sysPrompt:"" },
+    groups: [],
     activeId: null,
     editingId: null,
     chat: {},
@@ -529,11 +602,13 @@ body::after{
     }catch(e){}
     try{ var a = localStorage.getItem(LS_ACTIVE); if(a) state.activeId = a; }catch(e){}
     try{ var ch = JSON.parse(localStorage.getItem(LS_CHAT)||"{}"); if(ch && typeof ch==="object") state.chat = ch; }catch(e){}
+    try{ var g = JSON.parse(localStorage.getItem(LS_GROUPS)||"[]"); if(Array.isArray(g)) state.groups = g.filter(function(x){ return x && x.id && Array.isArray(x.memberIds); }); }catch(e){}
   }
   function saveChars(){ try{ localStorage.setItem(LS_CHARS, JSON.stringify(state.characters)); }catch(e){} }
   function saveSettings(){ try{ localStorage.setItem(LS_SETTINGS, JSON.stringify(state.settings)); }catch(e){} }
   function saveActive(){ try{ localStorage.setItem(LS_ACTIVE, state.activeId||""); }catch(e){} }
   function saveChat(){ try{ localStorage.setItem(LS_CHAT, JSON.stringify(state.chat)); }catch(e){} }
+  function saveGroups(){ try{ localStorage.setItem(LS_GROUPS, JSON.stringify(state.groups)); }catch(e){} }
 
   /* ---------- helpers ---------- */
   function uid(){ return "c_" + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
@@ -547,8 +622,18 @@ body::after{
     return name.slice(0,2).toUpperCase();
   }
   function activeChar(){ return state.characters.find(function(c){ return c.id===state.activeId; }) || null; }
+  function activeGroup(){ return state.groups.find(function(g){ return g.id===state.activeId; }) || null; }
+  function charById(id){ return state.characters.find(function(c){ return c.id===id; }) || null; }
+  function groupMembers(g){ return (g ? g.memberIds : []).map(charById).filter(Boolean); }
+  function activeMembers(){
+    var g = activeGroup();
+    if(g) return groupMembers(g);
+    var c = activeChar();
+    return c ? [c] : [];
+  }
+  function joinNames(arr){ return arr.map(function(c){ return c.name; }).join("、"); }
 
-  function systemPrompt(c){
+  function systemPrompt(c, members){
     var lines = [];
     var global = (state.settings.sysPrompt || "").trim();
     if(global) lines.push(global);
@@ -560,6 +645,12 @@ body::after{
     if(c.personality) lines.push("性格：" + c.personality + "。");
     if(c.description) lines.push("角色设定：" + c.description);
     if(c.hobbies) lines.push("爱好：" + c.hobbies + "。");
+    var others = (members || []).filter(function(x){ return x.id !== c.id; });
+    if(others.length){
+      var names = others.map(function(x){ return "「" + x.name + "」"; }).join("、");
+      lines.push("这是一场多人群聊，除你之外还有 " + names + " 和用户。对话记录里会以「名字：内容」标注每句话的说话人。");
+      lines.push("要求：只以「" + c.name + "」自己的身份发言，不要替其他角色或用户说话，不要输出名字前缀，也不要重复别人的话。");
+    }
     lines.push("要求：始终以第一人称、贴合角色人设自然地回复，保持角色不崩坏；不要提及自己是 AI、模型或系统提示；回复用中文，长度适中，可以有情绪和细节。");
     return lines.join("\n");
   }
@@ -574,7 +665,29 @@ body::after{
 
   /* ---------- sidebar ---------- */
   var firstListRender = true;
+  function groupItemHTML(g, i){
+    var mem = groupMembers(g);
+    var avatars = mem.slice(0,3).map(function(c){ return '<span class="monogram mono-xs">' + esc(initials(c.name)) + '</span>'; }).join("");
+    var names = mem.length ? joinNames(mem) : "（成员已删除）";
+    return '<div class="char-item group-item' + (g.id===state.activeId ? " is-active" : "") + '" data-gid="' + esc(g.id) + '" role="button" tabindex="0" style="--i:' + i + '">'
+      + '<span class="stack">' + avatars + '</span>'
+      + '<span class="char-info"><span class="char-name">' + esc(names) + '</span>'
+      + '<span class="char-meta">' + esc(mem.length + " 位角色") + '</span></span>'
+      + '<button class="char-del" data-gdel="' + esc(g.id) + '" title="删除群聊" aria-label="删除群聊">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>'
+      + '</button></div>';
+  }
+  function renderGroups(){
+    var box = $("groupList");
+    $("groupCount").textContent = state.groups.length;
+    if(!state.groups.length){
+      box.innerHTML = '<div class="rail-empty">还没有群聊<br><span>点「新建群聊」让多个角色同场对话</span></div>';
+      return;
+    }
+    box.innerHTML = state.groups.map(groupItemHTML).join("");
+  }
   function renderList(){
+    renderGroups();
     var box = $("charList");
     $("charCount").textContent = state.characters.length;
     if(!state.characters.length){
@@ -597,46 +710,63 @@ body::after{
   }
 
   function renderHeader(){
-    var c = activeChar();
+    var g = activeGroup();
+    var mem = activeMembers();
     var av = $("whoAvatar"), nm = $("whoName");
-    if(!c){
-      av.textContent = "?";
+    if(!mem.length){
+      av.innerHTML = '<span class="monogram">?</span>';
       nm.textContent = "未选择角色";
+    }else if(g){
+      av.innerHTML = mem.slice(0,3).map(function(c){ return '<span class="monogram">' + esc(initials(c.name)) + '</span>'; }).join("");
+      nm.textContent = joinNames(mem);
     }else{
-      av.textContent = initials(c.name);
-      nm.textContent = c.name;
+      av.innerHTML = '<span class="monogram">' + esc(initials(mem[0].name)) + '</span>';
+      nm.textContent = mem[0].name;
     }
     $("modelChip").textContent = state.settings.model || "未配置模型";
-    var ready = !!c;
+    var ready = mem.length > 0;
     $("input").disabled = !ready;
-    $("input").placeholder = ready ? ("和 " + c.name + " 说点什么…") : "先选择或创建一个角色";
+    $("input").placeholder = ready ? ("和 " + joinNames(mem) + " 说点什么…") : "先选择或创建一个角色";
     updateSend();
   }
 
   /* ---------- messages ---------- */
   function renderMessages(){
     var box = $("messages");
-    var c = activeChar();
-    if(!c){ box.innerHTML = ""; box.appendChild(welcomeNode()); return; }
-    var msgs = state.chat[c.id] || [];
-    if(!msgs.length){ box.innerHTML = ""; box.appendChild(emptyChatNode(c)); return; }
-    box.innerHTML = msgs.map(function(m){ return msgHTML(m, c); }).join("");
+    var mem = activeMembers();
+    if(!mem.length){ box.innerHTML = ""; box.appendChild(welcomeNode()); return; }
+    var msgs = state.chat[state.activeId] || [];
+    if(!msgs.length){ box.innerHTML = ""; box.appendChild(emptyChatNode(mem)); return; }
+    box.innerHTML = msgs.map(function(m){ return msgHTML(m, mem); }).join("");
     box.scrollTop = box.scrollHeight;
   }
   function welcomeNode(){
+    var has = state.characters.length > 0;
     var d = document.createElement("div");
     d.className = "welcome";
-    d.innerHTML = '<h1 class="welcome-title">还没有角色卡</h1>'
-      + '<p class="welcome-copy">创建一张角色卡——名字、岁数、性别、性格、描述、爱好——保存后就能以这个角色的身份开始对话。</p>';
+    d.innerHTML = has
+      ? '<h1 class="welcome-title">选择一个角色开始</h1>'
+        + '<p class="welcome-copy">从左侧点选角色卡单独对话，或点「新建群聊」把多个角色拉进同一场对话，让它们彼此也接得上话。</p>'
+      : '<h1 class="welcome-title">还没有角色卡</h1>'
+        + '<p class="welcome-copy">创建一张角色卡——名字、岁数、性别、性格、描述、爱好——保存后就能以这个角色的身份开始对话。</p>';
     var b = document.createElement("button");
-    b.className = "btn btn-primary"; b.textContent = "新建角色卡";
-    b.onclick = function(){ openCharModal(null); };
+    b.className = "btn btn-primary"; b.textContent = has ? "新建群聊" : "新建角色卡";
+    b.onclick = function(){ has ? openGroupModal() : openCharModal(null); };
     d.appendChild(b);
     return d;
   }
-  function emptyChatNode(c){
+  function emptyChatNode(mem){
     var d = document.createElement("div");
     d.className = "chat-empty";
+    if(mem.length > 1){
+      var av = mem.slice(0,4).map(function(c){ return '<span class="monogram monogram-lg">' + esc(initials(c.name)) + '</span>'; }).join("");
+      d.innerHTML = '<div class="chat-empty-stack">' + av + '</div>'
+        + '<h2 class="chat-empty-name">' + esc(joinNames(mem)) + '</h2>'
+        + '<p class="chat-empty-meta">群聊 · ' + mem.length + ' 位角色同场</p>'
+        + '<p class="chat-empty-desc">' + esc(mem.map(function(c){ return c.name + "：" + (c.description || c.personality || "（暂无设定）"); }).join("\n")) + '</p>';
+      return d;
+    }
+    var c = mem[0];
     var meta = [c.age ? c.age + " 岁" : null, c.gender || null, c.personality || null].filter(Boolean).join(" · ");
     d.innerHTML = '<span class="monogram monogram-lg">' + esc(initials(c.name)) + '</span>'
       + '<h2 class="chat-empty-name">' + esc(c.name) + '</h2>'
@@ -644,18 +774,23 @@ body::after{
       + '<p class="chat-empty-desc">' + esc(c.description || "还没有描述，编辑角色卡补充设定吧。") + '</p>';
     return d;
   }
-  function msgHTML(m, c){
+  function speakerOf(m, mem){
+    if(m.charId){ var c = charById(m.charId); if(c) return c; }
+    return mem[0] || { name: "?" };
+  }
+  function msgHTML(m, mem){
     if(m.role === "user"){
       return '<div class="msg msg-user"><div class="msg-text">' + esc(m.content) + '</div></div>';
     }
+    var c = speakerOf(m, mem);
     return '<div class="msg msg-ai"><span class="monogram">' + esc(initials(c.name)) + '</span>'
       + '<div class="msg-body"><span class="msg-name">' + esc(c.name) + '</span>'
       + '<div class="msg-text">' + esc(m.content) + '</div></div></div>';
   }
-  function appendMessageEl(m, c){
+  function appendMessageEl(m, mem){
     var box = $("messages");
     var holder = document.createElement("div");
-    holder.innerHTML = msgHTML(m, c);
+    holder.innerHTML = msgHTML(m, mem);
     var node = holder.firstElementChild;
     box.appendChild(node);
     box.scrollTop = box.scrollHeight;
@@ -727,6 +862,36 @@ body::after{
     renderList(); renderHeader(); renderMessages();
   }
 
+  /* ---------- group modal ---------- */
+  function openGroupModal(){
+    if(state.characters.length < 2){ toast("至少需要两张角色卡才能建群聊"); return; }
+    $("groupPick").innerHTML = state.characters.map(function(c){
+      return '<label class="pick-item"><input type="checkbox" value="' + esc(c.id) + '" />'
+        + '<span class="monogram mono-xs">' + esc(initials(c.name)) + '</span>'
+        + '<span class="pick-name">' + esc(c.name) + '</span></label>';
+    }).join("");
+    $("groupErr").classList.remove("show");
+    updateGroupCreate();
+    openOverlay("groupOverlay");
+  }
+  function updateGroupCreate(){
+    var n = $("groupPick").querySelectorAll("input:checked").length;
+    $("groupCreate").disabled = n < 2;
+    if(n >= 2) $("groupErr").classList.remove("show");
+  }
+  function createGroup(){
+    var ids = Array.prototype.slice.call($("groupPick").querySelectorAll("input:checked"))
+      .map(function(i){ return i.value; });
+    if(ids.length < 2){ $("groupErr").classList.add("show"); return; }
+    var g = { id: "g_" + Date.now().toString(36) + Math.random().toString(36).slice(2,7), memberIds: ids };
+    state.groups.unshift(g);
+    state.activeId = g.id;
+    saveGroups(); saveActive();
+    closeOverlay("groupOverlay");
+    renderList(); renderHeader(); renderMessages();
+    toast("群聊已创建：" + joinNames(groupMembers(g)));
+  }
+
   /* ---------- settings ---------- */
   function openSettings(){
     var s = state.settings;
@@ -766,19 +931,103 @@ body::after{
 
   /* ---------- send ---------- */
   function updateSend(){
-    var c = activeChar();
+    var mem = activeMembers();
     var txt = $("input").value.trim();
-    $("sendBtn").disabled = !c || !txt || state.streaming;
+    $("sendBtn").disabled = !mem.length || !txt || state.streaming;
   }
-  function pushMsg(charId, role, content){
-    if(!state.chat[charId]) state.chat[charId] = [];
-    state.chat[charId].push({ role: role, content: content });
+  function pushMsg(convId, role, content, charId){
+    if(!state.chat[convId]) state.chat[convId] = [];
+    var msg = { role: role, content: content };
+    if(charId) msg.charId = charId;
+    state.chat[convId].push(msg);
     saveChat();
   }
 
+  function buildMessages(speaker, mem, history){
+    var multi = mem.length > 1;
+    var out = [{ role:"system", content: systemPrompt(speaker, mem) }];
+    history.slice(-40).forEach(function(m){
+      if(m.role === "assistant" && multi){
+        out.push({ role:"assistant", content: speakerOf(m, mem).name + "：" + m.content });
+      }else{
+        out.push({ role:m.role, content:m.content });
+      }
+    });
+    return out;
+  }
+  function cleanReply(text, speaker){
+    var t = String(text == null ? "" : text).trim();
+    var safe = speaker.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return t.replace(new RegExp("^" + safe + "\\s*[:：]\\s*"), "");
+  }
+  function removeTyping(box){ var t = box.querySelector("#typingRow"); if(t) t.remove(); }
+  function dropEmptyLast(box){
+    var texts = box.querySelectorAll(".msg-ai .msg-text");
+    var last = texts[texts.length-1];
+    if(last && last.textContent.trim()===""){ last.closest(".msg").remove(); }
+  }
+
+  async function requestReply(speaker, mem, box){
+    var history = state.chat[state.activeId] || [];
+    var payload = {
+      model: state.settings.model,
+      temperature: state.settings.temp,
+      stream: !!state.settings.stream,
+      messages: buildMessages(speaker, mem, history)
+    };
+    var headers = { "Content-Type":"application/json" };
+    if(state.settings.key) headers["Authorization"] = "Bearer " + state.settings.key;
+
+    state.controller = new AbortController();
+    var res = await fetch(endpoint(), {
+      method:"POST", headers: headers,
+      body: JSON.stringify(payload),
+      signal: state.controller.signal
+    });
+    if(!res.ok){
+      var errTxt = await res.text().catch(function(){ return ""; });
+      throw new Error("HTTP " + res.status + " " + (errTxt ? errTxt.slice(0,300) : res.statusText));
+    }
+
+    var acc = "";
+    if(state.settings.stream && res.body){
+      removeTyping(box);
+      var liveNode = appendMessageEl({role:"assistant", content:"", charId:speaker.id}, mem);
+      var liveBubble = liveNode.querySelector(".msg-text");
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder("utf-8");
+      var buffer = "";
+      while(true){
+        var r = await reader.read();
+        if(r.done) break;
+        buffer += decoder.decode(r.value, { stream:true });
+        var lines = buffer.split("\n");
+        buffer = lines.pop();
+        for(var i=0;i<lines.length;i++){
+          var line = lines[i].trim();
+          if(!line || line.indexOf("data:") !== 0) continue;
+          var data = line.slice(5).trim();
+          if(data === "[DONE]") continue;
+          try{
+            var j = JSON.parse(data);
+            var delta = j.choices && j.choices[0] && j.choices[0].delta;
+            var piece = delta && (delta.content != null ? delta.content : "");
+            if(piece){ acc += piece; liveBubble.textContent = acc; box.scrollTop = box.scrollHeight; }
+          }catch(e){ /* partial frame */ }
+        }
+      }
+    }else{
+      var jj = await res.json();
+      acc = (jj.choices && jj.choices[0] && jj.choices[0].message && jj.choices[0].message.content) || "";
+      removeTyping(box);
+      appendMessageEl({role:"assistant", content:acc || "（空回复）", charId:speaker.id}, mem);
+    }
+    return acc;
+  }
+
   async function send(){
-    var c = activeChar();
-    if(!c || state.streaming) return;
+    var mem = activeMembers();
+    if(!mem.length || state.streaming) return;
     var text = $("input").value.trim();
     if(!text) return;
     if(!state.settings.model){ openSettings(); toast("先配置模型"); return; }
@@ -786,94 +1035,43 @@ body::after{
     var box = $("messages");
     if(box.querySelector(".welcome") || box.querySelector(".chat-empty")) box.innerHTML = "";
 
-    pushMsg(c.id, "user", text);
-    appendMessageEl({role:"user", content:text}, c);
+    var convId = state.activeId;
+    pushMsg(convId, "user", text);
+    appendMessageEl({role:"user", content:text}, mem);
     $("input").value = ""; autoGrow(); updateSend();
 
     state.streaming = true;
-    var typing = appendTyping(c);
-
-    var history = state.chat[c.id] || [];
-    var payload = {
-      model: state.settings.model,
-      temperature: state.settings.temp,
-      stream: !!state.settings.stream,
-      messages: [{ role:"system", content: systemPrompt(c) }].concat(
-        history.slice(-40).map(function(m){ return { role:m.role, content:m.content }; })
-      )
-    };
-    var headers = { "Content-Type":"application/json" };
-    if(state.settings.key) headers["Authorization"] = "Bearer " + state.settings.key;
-
-    var acc = "";
     try{
-      state.controller = new AbortController();
-      var res = await fetch(endpoint(), {
-        method:"POST", headers: headers,
-        body: JSON.stringify(payload),
-        signal: state.controller.signal
-      });
-
-      if(!res.ok){
-        var errTxt = await res.text().catch(function(){ return ""; });
-        throw new Error("HTTP " + res.status + " " + (errTxt ? errTxt.slice(0,300) : res.statusText));
-      }
-
-      if(state.settings.stream && res.body){
-        typing.remove();
-        var liveNode = appendMessageEl({role:"assistant", content:""}, c);
-        var liveBubble = liveNode.querySelector(".msg-text");
-        var reader = res.body.getReader();
-        var decoder = new TextDecoder("utf-8");
-        var buffer = "";
-        while(true){
-          var r = await reader.read();
-          if(r.done) break;
-          buffer += decoder.decode(r.value, { stream:true });
-          var lines = buffer.split("\n");
-          buffer = lines.pop();
-          for(var i=0;i<lines.length;i++){
-            var line = lines[i].trim();
-            if(!line || line.indexOf("data:") !== 0) continue;
-            var data = line.slice(5).trim();
-            if(data === "[DONE]") continue;
-            try{
-              var j = JSON.parse(data);
-              var delta = j.choices && j.choices[0] && j.choices[0].delta;
-              var piece = delta && (delta.content != null ? delta.content : "");
-              if(piece){ acc += piece; liveBubble.textContent = acc; box.scrollTop = box.scrollHeight; }
-            }catch(e){ /* partial frame */ }
-          }
+      for(var idx=0; idx<mem.length; idx++){
+        var speaker = mem[idx];
+        appendTyping(speaker);
+        var acc = "";
+        try{
+          acc = await requestReply(speaker, mem, box);
+        }catch(err){
+          removeTyping(box); dropEmptyLast(box);
+          if(err && err.name === "AbortError"){ toast("已停止生成"); break; }
+          console.error(err);
+          appendMessageEl({role:"assistant", content:"请求失败：" + (err && err.message ? err.message : String(err)) + "\n\n请检查 API Base URL、Key、模型名，以及服务是否允许浏览器跨域（CORS）。", charId:speaker.id}, mem);
+          continue;
         }
-      }else{
-        var jj = await res.json();
-        acc = (jj.choices && jj.choices[0] && jj.choices[0].message && jj.choices[0].message.content) || "";
-        typing.remove();
-        appendMessageEl({role:"assistant", content:acc || "（空回复）"}, c);
-      }
-
-      if(acc){
-        pushMsg(c.id, "assistant", acc);
-      }else{
-        if(typing.parentNode) typing.remove();
-        var texts = box.querySelectorAll(".msg-ai .msg-text");
-        var last = texts[texts.length-1];
-        if(last && last.textContent.trim()===""){ last.closest(".msg").remove(); }
-        toast("模型没有返回内容，检查模型名或额度");
-      }
-    }catch(err){
-      if(typing.parentNode) typing.remove();
-      var live = box.querySelectorAll(".msg-ai .msg-text");
-      var lastB = live[live.length-1];
-      if(lastB && lastB.textContent.trim()===""){ lastB.closest(".msg").remove(); }
-      if(err && err.name === "AbortError"){ toast("已停止生成"); }
-      else{
-        console.error(err);
-        appendMessageEl({role:"assistant", content:"请求失败：" + (err && err.message ? err.message : String(err)) + "\n\n请检查 API Base URL、Key、模型名，以及服务是否允许浏览器跨域（CORS）。"}, c);
+        acc = cleanReply(acc, speaker);
+        if(acc){
+          if(state.settings.stream){
+            var texts = box.querySelectorAll(".msg-ai .msg-text");
+            var last = texts[texts.length-1];
+            if(last) last.textContent = acc;
+          }
+          pushMsg(convId, "assistant", acc, speaker.id);
+        }else{
+          removeTyping(box); dropEmptyLast(box);
+          if(mem.length === 1) toast("模型没有返回内容，检查模型名或额度");
+        }
       }
     }finally{
       state.streaming = false;
       state.controller = null;
+      removeTyping(box);
       updateSend();
       renderHeader();
     }
@@ -891,10 +1089,44 @@ body::after{
   /* ---------- events ---------- */
   $("newCharBtn").addEventListener("click", function(){ openCharModal(null); closeSidebar(); });
   $("charSave").addEventListener("click", saveChar);
+  $("newGroupBtn").addEventListener("click", function(){ openGroupModal(); closeSidebar(); });
+  $("groupCreate").addEventListener("click", createGroup);
+  $("groupPick").addEventListener("change", updateGroupCreate);
   $("settingsBtn").addEventListener("click", openSettings);
   $("setSave").addEventListener("click", saveSettingsForm);
   $("s-temp").addEventListener("input", function(){ $("s-tempVal").textContent = this.value; });
   $("f-name").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); saveChar(); } });
+
+  $("groupList").addEventListener("click", function(e){
+    var del = e.target.closest("[data-gdel]");
+    if(del){
+      e.stopPropagation();
+      var gid = del.getAttribute("data-gdel");
+      var g = state.groups.find(function(x){ return x.id===gid; });
+      if(g && confirm("删除群聊「" + joinNames(groupMembers(g)) + "」及其对话记录？")){
+        state.groups = state.groups.filter(function(x){ return x.id!==gid; });
+        delete state.chat[gid];
+        if(state.activeId === gid) state.activeId = state.characters.length ? state.characters[0].id : null;
+        saveGroups(); saveChat(); saveActive();
+        renderList(); renderHeader(); renderMessages();
+        toast("群聊已删除");
+      }
+      return;
+    }
+    var item = e.target.closest(".char-item");
+    if(item){
+      state.activeId = item.getAttribute("data-gid");
+      saveActive();
+      renderList(); renderHeader(); renderMessages();
+      closeSidebar();
+    }
+  });
+  $("groupList").addEventListener("keydown", function(e){
+    if(e.key==="Enter" || e.key===" "){
+      var item = e.target.closest(".char-item");
+      if(item){ e.preventDefault(); item.click(); }
+    }
+  });
 
   $("charList").addEventListener("click", function(e){
     var del = e.target.closest("[data-del]");
@@ -905,8 +1137,13 @@ body::after{
       if(c && confirm("删除角色「" + c.name + "」及其对话记录？")){
         state.characters = state.characters.filter(function(x){ return x.id!==id; });
         delete state.chat[id];
+        state.groups = state.groups.filter(function(g){
+          g.memberIds = g.memberIds.filter(function(mid){ return mid!==id; });
+          if(g.memberIds.length < 2){ delete state.chat[g.id]; if(state.activeId===g.id) state.activeId=null; return false; }
+          return true;
+        });
         if(state.activeId === id) state.activeId = state.characters.length ? state.characters[0].id : null;
-        saveChars(); saveChat(); saveActive();
+        saveChars(); saveChat(); saveGroups(); saveActive();
         renderList(); renderHeader(); renderMessages();
         toast("已删除");
       }
