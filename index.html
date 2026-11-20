@@ -203,11 +203,26 @@ body::after{
   padding:var(--space-3) var(--space-5);max-width:100%;
 }
 
-.typing{display:inline-flex;gap:5px;padding:2px 0}
-.typing i{width:6px;height:6px;border-radius:50%;background:var(--ink-3);display:block;animation:blink 1.3s var(--ease-in-out) infinite}
+.typing{display:inline-flex;gap:5px;padding:2px 0}.typing i{width:6px;height:6px;border-radius:50%;background:var(--ink-3);display:block;animation:blink 1.3s var(--ease-in-out) infinite}
 .typing i:nth-child(2){animation-delay:.18s}
 .typing i:nth-child(3){animation-delay:.36s}
 @keyframes blink{0%,60%,100%{opacity:.2;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+
+/* 生图 */
+.msg-acts{display:flex;gap:var(--space-3);margin-top:var(--space-2);opacity:0;transition:opacity var(--dur-1) var(--ease-out)}
+.msg:hover .msg-acts,.msg-acts:focus-within{opacity:1}
+.msg-act{
+  padding:0;border:none;background:none;cursor:pointer;
+  font-family:var(--font-mono);font-size:var(--text-xs);color:var(--ink-3);
+  transition:color var(--dur-1);
+}
+.msg-act:hover{color:var(--accent)}
+.msg-act:disabled{color:var(--ink-3);opacity:.55;cursor:default}
+.msg-img{
+  display:block;width:100%;max-width:420px;margin-top:var(--space-3);
+  border-radius:var(--radius-lg);border:1px solid var(--line-2);background:var(--paper-2);
+}
+@media (hover:none){.msg-acts{opacity:1}}
 
 /* ============ composer ============ */
 .composer{
@@ -617,7 +632,7 @@ body::after{
     if(!c){ box.innerHTML = ""; box.appendChild(welcomeNode()); return; }
     var msgs = state.chat[c.id] || [];
     if(!msgs.length){ box.innerHTML = ""; box.appendChild(emptyChatNode(c)); return; }
-    box.innerHTML = msgs.map(function(m){ return msgHTML(m); }).join("");
+    box.innerHTML = msgs.map(function(m, i){ return msgHTML(m, i); }).join("");
     box.scrollTop = box.scrollHeight;
   }
   function welcomeNode(){
@@ -645,12 +660,14 @@ body::after{
       + '<p class="chat-empty-desc">' + esc(c.description || "还没有描述，编辑角色卡补充设定吧。") + '</p>';
     return d;
   }
-  function msgHTML(m){
+  function msgHTML(m, idx){
     if(m.role === "user"){
       return '<div class="msg msg-user"><div class="msg-text">' + esc(m.content) + '</div></div>';
     }
+    var img = m.img ? '<img class="msg-img" src="' + esc(m.img) + '" alt="场景图" loading="lazy" />' : "";
+    var act = (idx == null) ? "" : '<div class="msg-acts"><button class="msg-act" data-draw="' + idx + '">' + (m.img ? "重画" : "画出来") + '</button></div>';
     return '<div class="msg msg-ai"><div class="msg-body">'
-      + '<div class="msg-text">' + esc(m.content) + '</div></div></div>';
+      + '<div class="msg-text">' + esc(m.content) + '</div>' + img + act + '</div></div>';
   }
   function appendMessageEl(m){
     var box = $("messages");
@@ -670,6 +687,90 @@ body::after{
     box.appendChild(d);
     box.scrollTop = box.scrollHeight;
     return d;
+  }
+
+  /* ---------- 生图（局域网 ComfyUI） ---------- */
+  var COMFY = { port: 8189, ckpt: "waiIllustriousSDXL_v170.safetensors", steps: 22, cfg: 6.5, width: 832, height: 1216 };
+  var NEG = "lowres, bad anatomy, bad hands, extra fingers, worst quality, watermark, signature, text, jpeg artifacts";
+  function comfyBase(){ return "http://" + location.hostname + ":" + COMFY.port; }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+
+  async function toTags(scene, c){
+    var sys = "你是 Stable Diffusion 标签转换器。把中文场景描述转换成英文 danbooru 风格标签，用英文逗号分隔。只输出标签本身：不要句子、不要解释、不要引号、不要编号。顺序为人物外观、表情、动作、服装、场景、光线、构图。";
+    var user = "角色名：" + c.name + "\n角色设定：" + (c.description || c.personality || "无") + "\n场景：" + scene;
+    var headers = { "Content-Type": "application/json" };
+    if(state.settings.key) headers["Authorization"] = "Bearer " + state.settings.key;
+    var res = await fetch(endpoint(), {
+      method: "POST", headers: headers,
+      body: JSON.stringify({ model: state.settings.model, temperature: 0.3, stream: false, messages: [{ role: "system", content: sys }, { role: "user", content: user }] })
+    });
+    if(!res.ok) throw new Error("标签生成失败 HTTP " + res.status);
+    var j = await res.json();
+    var t = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "";
+    t = t.replace(/["“”]/g, "").replace(/\s*\n+\s*/g, ", ").trim();
+    if(!t) throw new Error("标签为空");
+    return t;
+  }
+
+  function comfyWorkflow(tags){
+    return {
+      "3": { class_type: "KSampler", inputs: { seed: Math.floor(Math.random()*1e9), steps: COMFY.steps, cfg: COMFY.cfg, sampler_name: "euler", scheduler: "normal", denoise: 1, model: ["4",0], positive: ["6",0], negative: ["7",0], latent_image: ["5",0] } },
+      "4": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: COMFY.ckpt } },
+      "5": { class_type: "EmptyLatentImage", inputs: { width: COMFY.width, height: COMFY.height, batch_size: 1 } },
+      "6": { class_type: "CLIPTextEncode", inputs: { text: tags + ", masterpiece, best quality, highly detailed", clip: ["4",1] } },
+      "7": { class_type: "CLIPTextEncode", inputs: { text: NEG, clip: ["4",1] } },
+      "8": { class_type: "VAEDecode", inputs: { samples: ["3",0], vae: ["4",2] } },
+      "9": { class_type: "SaveImage", inputs: { filename_prefix: "yanchat", images: ["8",0] } }
+    };
+  }
+
+  async function comfyGenerate(tags){
+    var base = comfyBase();
+    var r = await fetch(base + "/prompt", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: comfyWorkflow(tags), client_id: "yanchat" })
+    });
+    if(!r.ok) throw new Error("ComfyUI 拒绝了任务 HTTP " + r.status);
+    var j = await r.json();
+    if(!j.prompt_id) throw new Error("ComfyUI 没有返回任务号");
+    for(var i = 0; i < 120; i++){
+      await sleep(1000);
+      var h = await (await fetch(base + "/history/" + j.prompt_id)).json();
+      var e = h[j.prompt_id];
+      if(!e || !e.outputs) continue;
+      var imgs = [];
+      Object.keys(e.outputs).forEach(function(k){ (e.outputs[k].images || []).forEach(function(x){ imgs.push(x); }); });
+      if(!imgs.length) continue;
+      var im = imgs[0];
+      return base + "/view?filename=" + encodeURIComponent(im.filename) + "&subfolder=" + encodeURIComponent(im.subfolder || "") + "&type=" + (im.type || "output");
+    }
+    throw new Error("出图超时");
+  }
+
+  async function drawImage(idx, btn){
+    var c = activeChar();
+    if(!c) return;
+    var msgs = state.chat[c.id] || [];
+    var m = msgs[idx];
+    if(!m || m.role !== "assistant") return;
+    if(location.protocol !== "http:"){
+      toast("用局域网地址打开页面才能出图");
+      return;
+    }
+    var old = btn.textContent;
+    btn.disabled = true; btn.textContent = "生成中…";
+    try{
+      var tags = await toTags(m.content, c);
+      var url = await comfyGenerate(tags);
+      m.img = url;
+      saveChat();
+      renderMessages();
+      toast("画好了");
+    }catch(err){
+      console.error(err);
+      btn.disabled = false; btn.textContent = old;
+      toast("没画成：" + (err && err.message ? err.message : "ComfyUI 连不上"));
+    }
   }
 
   /* ---------- modal plumbing ---------- */
@@ -879,6 +980,7 @@ body::after{
           if(last) last.textContent = acc;
         }
         pushMsg(convId, "assistant", acc, speaker.id);
+        renderMessages();
       }else{
         removeTyping(box); dropEmptyLast(box);
         toast("模型没有返回内容，检查模型名或额度");
@@ -900,6 +1002,11 @@ body::after{
     if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); send(); }
   });
   $("sendBtn").addEventListener("click", send);
+
+  $("messages").addEventListener("click", function(e){
+    var b = e.target.closest("[data-draw]");
+    if(b && !b.disabled) drawImage(parseInt(b.getAttribute("data-draw"), 10), b);
+  });
 
   /* ---------- events ---------- */
   $("newCharBtn").addEventListener("click", function(){ openCharModal(null); closeSidebar(); });
