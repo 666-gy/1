@@ -568,6 +568,7 @@ body::after{
     if(c.description) lines.push("角色设定：" + c.description);
     if(c.hobbies) lines.push("爱好：" + c.hobbies + "。");
     lines.push("要求：始终以第一人称、贴合角色人设自然地回复，保持角色不崩坏；不要提及自己是 AI、模型或系统提示；回复用中文，长度适中，可以有情绪和细节。");
+    lines.push("每次回复的最后另起一行，用 <pic> 和 </pic> 包住一行英文 danbooru 标签，描述这句话里正在发生的画面：人物外观、当前穿着或裸露状态、姿势、表情、动作、场景、光线、镜头。标签用英文逗号分隔，只写标签，不要解释。这一行是给绘图模型用的，读者看不到。");
     return lines.join("\n");
   }
 
@@ -758,7 +759,7 @@ body::after{
     var old = btn.textContent;
     btn.disabled = true; btn.textContent = "生成中…";
     try{
-      var tags = await toTags(m.content, c);
+      var tags = m.tags || await toTags(m.content, c);
       var url = await comfyGenerate(tags);
       m.img = url;
       saveChat();
@@ -854,10 +855,11 @@ body::after{
     var txt = $("input").value.trim();
     $("sendBtn").disabled = !activeChar() || !txt || state.streaming;
   }
-  function pushMsg(convId, role, content, charId){
+  function pushMsg(convId, role, content, charId, tags){
     if(!state.chat[convId]) state.chat[convId] = [];
     var msg = { role: role, content: content };
     if(charId) msg.charId = charId;
+    if(tags) msg.tags = tags;
     state.chat[convId].push(msg);
     saveChat();
   }
@@ -873,6 +875,13 @@ body::after{
     var t = String(text == null ? "" : text).trim();
     var safe = speaker.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return t.replace(new RegExp("^" + safe + "\\s*[:：]\\s*"), "");
+  }
+  function splitPic(text){
+    var raw = String(text == null ? "" : text);
+    var m = raw.match(/<pic>([\s\S]*?)<\/pic>/i);
+    if(!m) return { text: raw.trim(), tags: "" };
+    var body = (raw.slice(0, m.index) + raw.slice(m.index + m[0].length)).replace(/\n{3,}/g, "\n\n").trim();
+    return { text: body, tags: m[1].replace(/\s*\n+\s*/g, ", ").trim() };
   }
   function removeTyping(box){ var t = box.querySelector("#typingRow"); if(t) t.remove(); }
   function dropEmptyLast(box){
@@ -971,13 +980,14 @@ body::after{
         return;
       }
       acc = cleanReply(acc, speaker);
-      if(acc){
+      var parsed = splitPic(acc);
+      if(parsed.text){
         if(state.settings.stream){
           var texts = box.querySelectorAll(".msg-ai .msg-text");
           var last = texts[texts.length-1];
-          if(last) last.textContent = acc;
+          if(last) last.textContent = parsed.text;
         }
-        pushMsg(convId, "assistant", acc, speaker.id);
+        pushMsg(convId, "assistant", parsed.text, speaker.id, parsed.tags);
         renderMessages();
       }else{
         removeTyping(box); dropEmptyLast(box);
