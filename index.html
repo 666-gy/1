@@ -568,7 +568,7 @@ body::after{
     if(c.description) lines.push("角色设定：" + c.description);
     if(c.hobbies) lines.push("爱好：" + c.hobbies + "。");
     lines.push("要求：始终以第一人称、贴合角色人设自然地回复，保持角色不崩坏；不要提及自己是 AI、模型或系统提示；回复用中文，长度适中，可以有情绪和细节。");
-    lines.push("每次回复的最后另起一行，用 <pic> 和 </pic> 包住一行英文 danbooru 标签，描述这句话里正在发生的画面：人物外观、当前穿着或裸露状态、姿势、表情、动作、场景、光线、镜头。标签用英文逗号分隔，只写标签，不要解释。这一行是给绘图模型用的，读者看不到。");
+    lines.push("每条回复都必须以一行 <pic>英文标签</pic> 结尾，不能省略、不能为空、不能写中文。标签描述这条回复里正在发生的画面：角色外观（沿用角色卡设定，不要改发色瞳色）、当前穿着或裸露状态、姿势、表情、动作、场景、光线、镜头。用英文逗号分隔的 danbooru 标签，只写标签。这一行是给绘图模型用的，读者看不到。");
     return lines.join("\n");
   }
 
@@ -694,23 +694,6 @@ body::after{
   function comfyBase(){ return "http://" + location.hostname + ":" + COMFY.port; }
   function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
 
-  async function toTags(scene, c){
-    var sys = "你是 Stable Diffusion 标签转换器。把中文场景描述转换成英文 danbooru 风格标签，用英文逗号分隔。只输出标签本身：不要句子、不要解释、不要引号、不要编号。顺序为人物外观、表情、动作、服装、场景、光线、构图。";
-    var user = "角色名：" + c.name + "\n角色设定：" + (c.description || c.personality || "无") + "\n场景：" + scene;
-    var headers = { "Content-Type": "application/json" };
-    if(state.settings.key) headers["Authorization"] = "Bearer " + state.settings.key;
-    var res = await fetch(endpoint(), {
-      method: "POST", headers: headers,
-      body: JSON.stringify({ model: state.settings.model, temperature: 0.3, stream: false, messages: [{ role: "system", content: sys }, { role: "user", content: user }] })
-    });
-    if(!res.ok) throw new Error("标签生成失败 HTTP " + res.status);
-    var j = await res.json();
-    var t = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "";
-    t = t.replace(/["“”]/g, "").replace(/\s*\n+\s*/g, ", ").trim();
-    if(!t) throw new Error("标签为空");
-    return t;
-  }
-
   function comfyWorkflow(tags){
     return {
       "3": { class_type: "KSampler", inputs: { seed: Math.floor(Math.random()*1e9), steps: COMFY.steps, cfg: COMFY.cfg, sampler_name: "euler", scheduler: "normal", denoise: 1, model: ["4",0], positive: ["6",0], negative: ["7",0], latent_image: ["5",0] } },
@@ -746,6 +729,14 @@ body::after{
     throw new Error("出图超时");
   }
 
+  function validTags(t){
+    var s = String(t == null ? "" : t).trim();
+    if(!s) return false;
+    if(/[\u4e00-\u9fa5]/.test(s)) return false;
+    if(/(抱歉|不能|无法|sorry|cannot|unable|as an ai)/i.test(s)) return false;
+    return s.split(",").filter(function(x){ return x.trim(); }).length >= 3;
+  }
+
   async function drawImage(idx, btn){
     var c = activeChar();
     if(!c) return;
@@ -756,11 +747,14 @@ body::after{
       toast("当前是 " + location.protocol + "//" + location.host + "，浏览器禁止它调用本机 http。请改用 http://<电脑内网IP>:4321/ 打开");
       return;
     }
+    if(!validTags(m.tags)){
+      toast("这条回复没有可用的画面标签，重新发一条再画");
+      return;
+    }
     var old = btn.textContent;
     btn.disabled = true; btn.textContent = "生成中…";
     try{
-      var tags = m.tags || await toTags(m.content, c);
-      var url = await comfyGenerate(tags);
+      var url = await comfyGenerate(m.tags);
       m.img = url;
       saveChat();
       renderMessages();
